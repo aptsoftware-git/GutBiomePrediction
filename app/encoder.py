@@ -25,7 +25,7 @@ def encoder(input_dim, latent_dim=20):
     encoded = encoder_model(autoencoder_input)
     decoded = decoder_model(encoded)
     autoencoder_model = Model(autoencoder_input, decoded)
-    autoencoder_model.compile(optimizer="adam", loss="huber")
+    autoencoder_model.compile(optimizer="adam", loss="huber", jit_compile=False)
 
     # print(latent_targets.shape)
 

@@ -1,0 +1,3 @@
+-r requirements.txt
+# NVIDIA GPU support on Linux / Windows WSL2.
+tensorflow[and-cuda]==2.21.0

@@ -13,7 +13,7 @@ def predictor(input_dim,  latent_dim):
     # x = Dropout(0.3)(x)
     predictor_output = Dense(latent_dim, activation='linear')(x)
     predictor_model = Model(inputs=predictor_input, outputs=predictor_output)
-    predictor_model.compile(optimizer='adam', loss='mse')
+    predictor_model.compile(optimizer='adam', loss='mse', jit_compile=False)
     # predictor.fit(X_scaled, latent_targets, epochs=500, batch_size=8, verbose=1, callbacks=[early_stop])
 
     return predictor_model

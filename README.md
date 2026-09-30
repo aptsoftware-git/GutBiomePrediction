@@ -1,136 +1,134 @@
-# Microbiome Prediction App (Streamlit UI)
+# Microbiome / GCMS Prediction App
 
-This project provides a Streamlit UI to train a microbiome prediction model using an uploaded Excel file.
+A Streamlit application that predicts binary target values from ten participant
+features. The bundled default dataset is
+`Input_Data/GCMS_Metabolite_Data_Combined.xlsx` (39 participants, 286 targets).
 
-## Project Structure
+## Setup
 
-- `app/ui.py` - Streamlit UI app
-- `app/loadandpreprocess.py` - data loading and preprocessing
-- `app/encoder.py` - autoencoder and decoder model builder
-- `app/predictor.py` - predictor model builder
-- `app/results/` - exported training results (Excel)
-- `app/temp_uploads/` - temporary uploaded files from UI
-
-## Prerequisites
-
-- Python 3.9+ (recommended)
-- pip
-
-## 1) Setup Environment
-
-From project root:
-
-### Option A: Using uv (recommended)
-
-If you have `uv` installed, create and activate a virtual environment with:
+Use Python 3.10–3.13 (tested with Python 3.13):
 
 ```bash
-uv venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-### On Windows (cmd)
+For an NVIDIA GPU on Linux or Windows WSL2, install the GPU dependencies instead:
 
 ```bash
-.venv\Scripts\activate
+python -m pip install -r requirements-gpu.txt
 ```
 
-### On PowerShell
+The NVIDIA driver must already work (`nvidia-smi`). The dependency setup follows
+[TensorFlow's installation guide](https://www.tensorflow.org/install/pip).
+`app/runtime.py` selects the GPU, enables memory growth, and handles the missing
+cuSOLVER search path in the TensorFlow 2.21 Linux wheel. CPU is the fallback.
+Restart an already running app after changing its environment.
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
+## Build the default model once
 
-### Install dependencies with uv
+On first launch, select **Default GCMS model** and click **Build default model**
+in the expanded training controls. The bundled dataset is used automatically;
+**Predict** becomes available after the build succeeds.
+
+Alternatively, from the repository root:
 
 ```bash
-uv pip install streamlit tensorflow numpy pandas scikit-learn openpyxl
+.venv/bin/python app/train_default.py
 ```
 
-### Option B: Using python venv
+This trains from `Input_Data/GCMS_Metabolite_Data_Combined.xlsx` and writes a
+versioned model bundle under `app/models/default/`. It includes both networks,
+feature and target names, fitted scalers, evaluation results, training settings,
+a dataset SHA-256 fingerprint, and elapsed training time. The final saved model
+is fitted on **all** training rows, after evaluation is complete.
+
+Repeat runs reuse the existing bundle when the dataset, configuration, and
+pipeline version match. Prediction never starts a training job. To rebuild:
 
 ```bash
-python -m venv .venv
+.venv/bin/python app/train_default.py --force
 ```
 
-### On Windows (cmd)
+Optional evaluation and training controls:
 
 ```bash
-.venv\Scripts\activate
+.venv/bin/python app/train_default.py --validation kfold
+.venv/bin/python app/train_default.py --validation loo
+.venv/bin/python app/train_default.py --validation none --epochs 500 --batch-size 32
 ```
 
-### On PowerShell
+`none` saves a model without reporting evaluation metrics. `loo` is intentionally
+slow. The dataset and output directory can be overridden with `--data` and
+`--output`. Generated bundles are local artifacts ignored by Git; run the build
+command on a fresh checkout. Existing legacy files in `app/models/` are preserved.
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-## 2) Install Dependencies
-
-Install required packages:
+## Run and predict
 
 ```bash
-pip install streamlit tensorflow numpy pandas scikit-learn openpyxl
+.venv/bin/python -m streamlit run app/ui.py --server.port 10880
 ```
 
-> `openpyxl` is required for reading/writing `.xlsx` files.
+Open the displayed URL, choose **Default GCMS model**, fill in the participant
+form, and click **Predict**. The saved model loads automatically. Results show
+one row per target and can be downloaded as CSV. Cancelling the download keeps
+the last successful result and its submitted inputs visible for the current session.
 
-## 3) Run the App
+To use another dataset, choose **Uploaded-data model**, expand the training
+controls, upload an Excel file, and build the model. Uploaded-data models are
+stored separately under `app/models/custom/`; they do not replace the default.
+The UI also offers a default-model build button if no default bundle exists.
 
-From project root:
+Use **Saved model build** to choose an earlier build for prediction. All successful
+builds are retained on disk, including the last five and any older builds, separately
+for default and uploaded-data models. The selector shows the build time (UTC),
+evaluation method, epochs, batch size, and unique build ID. Reusing unchanged data
+and settings does not create a new build; enable **Force retraining** to build again.
+Selecting an older build does not replace the latest saved build. Results identify
+the exact build used. Help icons beside evaluation method, epochs, and batch size
+explain the training options.
+
+## Performance and evaluation
+
+The previous default performed leave-one-out validation, fitting two networks
+for each participant and then fitting both again: **80 network fits for 39 rows**.
+The new default uses a seeded 20% holdout (8 rows) followed by a full-data fit:
+**4 network fits**. Five-fold and leave-one-out validation remain available.
+Holdout scores and cross-validation scores measure different evaluations and
+should not be compared as if they used the same test set.
+
+Training uses float32 tensors, batches of 32, and a compiled in-memory epoch loop,
+avoiding Keras input-pipeline setup on every epoch and repeated XLA compilation.
+Each network independently stops after 25 epochs without sufficient training-loss
+improvement and restores its best weights. The maximum remains 500 epochs.
+Prediction calls the networks directly, avoiding `predict()` input-pipeline overhead.
+The network architectures, losses, and regularization remain the same.
+
+The saved default bundle records the measured runtime and metrics in
+`training.json`. GPU warm-up and kernel compilation can affect runtime. A tiny
+holdout is only a limited quality estimate; use cross-validation for a broader
+assessment. No model-quality improvement is claimed from these speed changes.
+
+## Input and output semantics
+
+The Excel layout is: identifier column, ten numeric/participant features, then
+numeric target columns. The feature list includes `Sex`, which accepts Male,
+Female, 1, or 0. Encoding handles pandas object, string, and categorical columns,
+ignoring surrounding whitespace and case. Prediction checks missing features,
+reorders them to the saved training schema, and rejects nonnumeric/missing values.
+
+The existing target definition is preserved: values above the **whole dataset's
+global target mean** become 1, all others 0. This threshold defines the labels
+before splitting; scalers and models are fitted only on each evaluation training
+partition. Outputs are binary indicators, not predicted metabolite concentrations
+or probabilities. Evaluation scores refer to those predefined binary labels.
+
+## Tests
 
 ```bash
-streamlit run app/ui.py --server.port 10880
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
-Then open the local URL shown in terminal (usually `http://localhost:10880`).
-
-## 4) How to Use the UI
-
-1. In **Mode**, keep **Train Model** selected.
-2. Click **Upload Excel File** and choose your `.xlsx`/`.xls` file.
-3. Set training parameters:
-   - **Latent Dimension** (default: `10`)
-   - **Epochs** (default: `500`)
-   - **Batch Size** (default: `8`)
-4. Click **Start Training**.
-5. Watch progress/logs in the UI.
-6. On completion:
-   - You will see **Overall R2** and **RMSE**
-   - Top 20 genera by R2 are displayed
-   - Results are saved to `app/results/` with timestamped filename.
-
-## Output Files
-
-Each run creates a timestamped file:
-
-- `app/results/Microbiome_Prediction_Results_YYYYMMDD_HHMMSS.xlsx`
-
-Workbook sheets:
-
-- `Metrics` - per-genus R2 and RMSE
-- `Predictions` - predicted values for all output genera
-
-## Notes
-
-- If you get `Import ... could not be resolved` for TensorFlow/Streamlit in your editor, verify the active Python environment and install packages in that same environment.
-- Training can take time due to Leave-One-Out training loops.
-
-## Troubleshooting
-
-### Streamlit not found
-
-```bash
-pip install streamlit
-```
-
-### TensorFlow not found
-
-```bash
-pip install tensorflow
-```
-
-### Excel read errors
-
-- Ensure file format is `.xlsx` or `.xls`
-- Re-save the Excel file and retry if it is corrupted
-- Ensure required columns are present in expected positions for preprocessing logic
+Tests cover sex encoding, schema alignment, bad inputs, actual neural-network
+learning, evaluation partitions, persistence, reuse, and failed rebuild behavior.
