@@ -1,0 +1,105 @@
+{
+  "source_sha256": "e022ab4060f0fafe225f2258c9d0e8224fa7e93fcd3a27ddc571c74c6e37747b",
+  "samples": 39,
+  "targets": 1638,
+  "feature_range": [
+    1,
+    10
+  ],
+  "fixed_alpha_ridge_max_difference": 0.017578125,
+  "results": {
+    "42": {
+      "metrics": {
+        "rmse": 3149.2693000995487,
+        "mae": 205.50599527410935,
+        "log_mse": 1.5962796407695363,
+        "bacteroides_rmse": 78418.42892825951,
+        "bacteroides_mae": 54255.72558290845
+      },
+      "selected": [
+        [
+          "ridge",
+          1000
+        ],
+        [
+          "ridge",
+          100
+        ],
+        [
+          "ridge",
+          100
+        ],
+        [
+          "mean",
+          0
+        ],
+        [
+          "mean",
+          0
+        ]
+      ]
+    },
+    "7": {
+      "metrics": {
+        "rmse": 3112.2621578518306,
+        "mae": 201.6701604267807,
+        "log_mse": 1.5721743422196492,
+        "bacteroides_rmse": 76979.43756266814,
+        "bacteroides_mae": 52736.481620592946
+      },
+      "selected": [
+        [
+          "mean",
+          0
+        ],
+        [
+          "ridge",
+          1000
+        ],
+        [
+          "ridge",
+          1000
+        ],
+        [
+          "ridge",
+          1000
+        ],
+        [
+          "ridge",
+          1000
+        ]
+      ]
+    },
+    "123": {
+      "metrics": {
+        "rmse": 3196.59071699388,
+        "mae": 208.42316395152977,
+        "log_mse": 1.6656176161334881,
+        "bacteroides_rmse": 78472.78219433269,
+        "bacteroides_mae": 52034.66321113782
+      },
+      "selected": [
+        [
+          "ridge",
+          100
+        ],
+        [
+          "ridge",
+          10000
+        ],
+        [
+          "ridge",
+          1000
+        ],
+        [
+          "ridge",
+          1
+        ],
+        [
+          "mean",
+          0
+        ]
+      ]
+    }
+  }
+}

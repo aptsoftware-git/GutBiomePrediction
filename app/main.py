@@ -20,13 +20,17 @@ from sklearn.preprocessing import StandardScaler
 from runtime import tf, TRAINING_DEVICE, DEVICE_NAME
 from encoder import encoder
 from predictor import predictor
-from loadandpreprocess import DEFAULT_DATA_PATH, loadandpreprocess, prepare_features
+from loadandpreprocess import DEFAULT_DATA_PATH, MICROBIOME_DATA_PATH, loadandpreprocess, prepare_features
+from microbiome import MicrobiomeBundle, MicrobiomeConfig, train_microbiome
 from training import fit_in_memory
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
 DEFAULT_MODEL_DIR = MODEL_DIR / "default"
 CUSTOM_MODEL_DIR = MODEL_DIR / "custom"
+DEFAULT_MICROBIOME_MODEL_DIR = MODEL_DIR / "microbiome" / "default"
+CUSTOM_MICROBIOME_MODEL_DIR = MODEL_DIR / "microbiome" / "custom"
 PIPELINE_VERSION = 2
+MICROBIOME_PIPELINE_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -133,7 +137,11 @@ def _artifact_directory(model_dir, version=None):
     if not name or name in {".", ".."} or Path(name).name != name:
         raise ValueError("Invalid model version pointer.")
     directory = model_dir / name
-    return directory if all((directory / f).exists() for f in ("predictor.keras", "decoder.keras", "meta.pkl", "training.json")) else None
+    if not (directory / "training.json").exists():
+        return None
+    info = json.loads((directory / "training.json").read_text())
+    files = ("bundle.pkl",) if info.get("task") == "microbiome" else ("predictor.keras", "decoder.keras", "meta.pkl")
+    return directory if all((directory / f).exists() for f in files) else None
 
 
 def model_info(model_dir=DEFAULT_MODEL_DIR, version=None):
@@ -161,12 +169,16 @@ def _save_trained_artifacts(bundle, info, model_dir):
     version = "run-" + uuid4().hex
     with TemporaryDirectory(prefix=".training-", dir=model_dir) as staging:
         destination = Path(staging)
-        bundle.predictor.save(destination / "predictor.keras")
-        bundle.decoder.save(destination / "decoder.keras")
-        with (destination / "meta.pkl").open("wb") as handle:
-            pickle.dump({"x_scaler": bundle.x_scaler, "y_scaler": bundle.y_scaler,
-                         "feature_columns": bundle.feature_columns,
-                         "target_columns": bundle.target_columns}, handle)
+        if isinstance(bundle, MicrobiomeBundle):
+            with (destination / "bundle.pkl").open("wb") as handle:
+                pickle.dump(bundle, handle)
+        else:
+            bundle.predictor.save(destination / "predictor.keras")
+            bundle.decoder.save(destination / "decoder.keras")
+            with (destination / "meta.pkl").open("wb") as handle:
+                pickle.dump({"x_scaler": bundle.x_scaler, "y_scaler": bundle.y_scaler,
+                             "feature_columns": bundle.feature_columns,
+                             "target_columns": bundle.target_columns}, handle)
         (destination / "training.json").write_text(json.dumps(info, indent=2))
         os.replace(destination, model_dir / version)
     temporary_pointer = model_dir / (".CURRENT-" + uuid4().hex)
@@ -177,6 +189,9 @@ def _save_trained_artifacts(bundle, info, model_dir):
 @lru_cache(maxsize=4)
 def _load_bundle(directory):
     directory = Path(directory)
+    if (directory / "bundle.pkl").exists():
+        with (directory / "bundle.pkl").open("rb") as handle:
+            return pickle.load(handle)
     with (directory / "meta.pkl").open("rb") as handle:
         meta = pickle.load(handle)
     with tf.device(TRAINING_DEVICE):
@@ -212,3 +227,40 @@ def predict_controller(user_input_row, model_dir=DEFAULT_MODEL_DIR, *, version=N
     if directory is None:
         raise ValueError("No saved model is available. Build the default model or train on an uploaded file first.")
     return _load_bundle(str(directory.resolve())).predict(user_input_row)
+
+
+def train_microbiome_controller(file_path=MICROBIOME_DATA_PATH, *,
+                                model_dir=DEFAULT_MICROBIOME_MODEL_DIR,
+                                config=None, progress=None, force=False):
+    config = config or MicrobiomeConfig()
+    file_path = Path(file_path)
+    source_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    existing = model_info(model_dir)
+    if (not force and existing and existing.get("task") == "microbiome"
+            and existing.get("source_sha256") == source_hash
+            and existing.get("config") == asdict(config)
+            and existing.get("pipeline_version") == MICROBIOME_PIPELINE_VERSION):
+        if progress:
+            progress("Reusing saved microbiome model; data and settings are unchanged.")
+        return existing
+    started = time.perf_counter()
+    X, Y = loadandpreprocess(file_path, task="microbiome")
+    bundle, metrics, history = train_microbiome(X, Y, config, progress)
+    info = {"task": "microbiome", "pipeline_version": MICROBIOME_PIPELINE_VERSION,
+            "source": file_path.name, "source_sha256": source_hash,
+            "config": asdict(config), "metrics": metrics, "history": history,
+            "samples": len(X), "targets": Y.shape[1], "device": "CPU (scikit-learn)",
+            "output_units": "Relative abundance (%) and bounded original abundance units",
+            "target_ranges": {name: [float(Y[name].min()), float(Y[name].max())] for name in Y},
+            "feature_ranges": {name: [float(X[name].min()), float(X[name].max())] for name in X},
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "training_seconds": round(time.perf_counter() - started, 3)}
+    _save_trained_artifacts(bundle, info, model_dir)
+    return info
+
+
+def predict_microbiome_values_controller(user_input_row, model_dir=DEFAULT_MICROBIOME_MODEL_DIR, *, version=None):
+    directory = _artifact_directory(model_dir, version)
+    if directory is None:
+        raise ValueError("No saved microbiome model is available.")
+    return _load_bundle(str(directory.resolve())).predict_values(user_input_row)
