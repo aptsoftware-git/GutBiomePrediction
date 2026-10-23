@@ -63,18 +63,18 @@ class UIFlowTests(unittest.TestCase):
         self.app.run()
         self.app.text_input[0].set_value("Original participant")
         self.button("Predict").click().run()
-        expected = self.app.dataframe[-1].value.copy()
+        expected = self.app.session_state["last_prediction"]["results"].copy()
         self.app.run()  # Same full rerun that used to erase downloaded results.
-        pd.testing.assert_frame_equal(self.app.dataframe[-1].value, expected)
+        pd.testing.assert_frame_equal(self.app.session_state["last_prediction"]["results"], expected)
         self.main.predict_controller.assert_called_once()
         self.app.radio[0].set_value("Uploaded-data model").run()
-        pd.testing.assert_frame_equal(self.app.dataframe[-1].value, expected)
+        pd.testing.assert_frame_equal(self.app.session_state["last_prediction"]["results"], expected)
         self.assertIn("Default GCMS model", self.app.caption[-2].value)
         self.main.predict_controller.side_effect = ValueError("test failure")
         self.app.text_input[0].set_value("New participant")
         self.button("Predict").click().run()
         self.assertFalse(self.app.exception)
-        pd.testing.assert_frame_equal(self.app.dataframe[-1].value, expected)
+        pd.testing.assert_frame_equal(self.app.session_state["last_prediction"]["results"], expected)
         self.assertEqual(self.app.dataframe[0].value.iloc[0]["Name"], "Original participant")
 
 

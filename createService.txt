@@ -1,0 +1,16 @@
+sudo tee /etc/systemd/system/gutbiome.service > /dev/null <<'EOF'
+[Unit]
+Description=GutBiome Streamlit Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/GutBiomePrediction
+ExecStart=/root/GutBiomePrediction/.venv/bin/python -m streamlit run app/ui.py --server.port 10880 --server.address 0.0.0.0 --server.headless true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF

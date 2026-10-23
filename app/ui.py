@@ -23,8 +23,40 @@ st.html("""
     flex: 0 0 auto;
     justify-content: flex-start;
 }
+[data-testid="stNumberInput"] button {
+    touch-action: none;
+    user-select: none;
+}
+.prediction-scroll {
+    max-height: 400px;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    padding-right: 16px;
+    border: 1px solid var(--st-border-color, #8886);
+    border-radius: 8px;
+}
+.prediction-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.prediction-table th, .prediction-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--st-border-color, #8886);
+}
+.prediction-table th {
+    position: sticky;
+    top: 0;
+    background: var(--st-background-color, white);
+}
+.prediction-table th:last-child, .prediction-table td:last-child {
+    width: 120px;
+    border-left: 1px solid var(--st-border-color, #8886);
+}
 </style>
 """)
+
+st.html(Path(__file__).parent / "static/number_input_hold.html", unsafe_allow_javascript=True)
 
 st.title("Microbiome Prediction")
 st.caption("Build the default model once, then reuse it for predictions, or train a model from your own Excel file.")
@@ -159,7 +191,7 @@ with st.form("user_profile_form"):
 
 	col4, col5, col6 = st.columns(3)
 	with col4:
-		weight_cm = st.number_input("Weight (cm)", min_value=0.0, value=70.0, step=0.1)
+		weight_kg = st.number_input("Weight (Kgs)", min_value=0.0, value=70.0, step=0.1)
 	with col5:
 		bmi = st.number_input("BMI", min_value=0.0, value=24.2, step=0.1)
 	with col6:
@@ -186,7 +218,7 @@ if submitted:
 				"Age": age,
 				"Sex": sex,
 				"Height (cm)": height_cm,
-				"Weight (cm)": weight_cm,
+				"Weight (cm)": weight_kg,  # Legacy feature name required by saved models.
 				"BMI": bmi,
 				"Body fat percentage": body_fat_percentage,
 				"MUAC (cm)": muac_cm,
@@ -214,9 +246,13 @@ if last_prediction is not None:
 	st.subheader("Last successful prediction")
 	st.caption(f"Model used: {last_prediction['model']}")
 	st.subheader("Submitted data")
-	st.dataframe(last_prediction["input"], use_container_width=True)
+	st.dataframe(last_prediction["input"].rename(columns={"Weight (cm)": "Weight (Kgs)"}), use_container_width=True)
 	st.subheader("Predicted outputs")
 	st.caption("Binary predictions: 1 = above the dataset-wide mean threshold; 0 = at or below it.")
-	st.dataframe(last_prediction["results"], use_container_width=True, hide_index=True)
+	st.html(
+		'<div class="prediction-scroll" tabindex="0" role="region" aria-label="Predicted outputs">'
+		+ last_prediction["results"].to_html(index=False, border=0, classes="prediction-table", escape=True)
+		+ "</div>"
+	)
 	st.download_button("Download predictions", last_prediction["results"].to_csv(index=False),
 	                   "predictions.csv", "text/csv", on_click="ignore")

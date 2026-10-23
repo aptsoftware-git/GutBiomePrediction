@@ -3,6 +3,6 @@ pandas
 scipy
 scikit-learn
 tensorflow
-streamlit
+streamlit>=1.63.0
 openpyxl
 xlrd

@@ -1,0 +1,71 @@
+<script>
+(() => {
+    // Install once: Streamlit rerenders must not cancel an in-progress hold.
+    if (window.__numberInputHoldInstalled) return;
+    window.__numberInputHoldCleanup?.();
+    window.__numberInputHoldInstalled = true;
+    const selector = '[data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"]';
+    let timer;
+    let active;
+    let suppressClick = null;
+    const stop = () => {
+        clearTimeout(timer);
+        active = null;
+    };
+    const currentButton = () => {
+        if (!active) return null;
+        const input = document.getElementById(active.inputId);
+        return input?.closest('[data-testid="stNumberInput"]')
+            ?.querySelector(`[data-testid="${active.direction}"]`);
+    };
+    const repeat = () => {
+        const button = currentButton();
+        if (!button || button.disabled || document.hidden) {
+            stop();
+            return;
+        }
+        // Use Streamlit's handler for step, bounds and pending form values.
+        button.click();
+        timer = setTimeout(repeat, 90);
+    };
+    document.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        stop();
+        suppressClick = null;
+        const button = event.target.closest(selector);
+        if (!button || button.disabled) return;
+        const input = button.closest('[data-testid="stNumberInput"]')?.querySelector('input');
+        if (!input) return;
+        // Avoid focus/blur changes interrupting the first press. Step immediately,
+        // then repeat after the hold delay; consume only its native release click.
+        event.preventDefault();
+        active = {inputId: input.id, direction: button.dataset.testid, pointerId: event.pointerId};
+        suppressClick = {inputId: input.id, direction: button.dataset.testid};
+        button.click();
+        timer = setTimeout(repeat, 400);
+    }, true);
+    document.addEventListener('click', event => {
+        const button = event.target.closest(selector);
+        if (!event.isTrusted || !button || !suppressClick) return;
+        const input = button.closest('[data-testid="stNumberInput"]')?.querySelector('input');
+        if (input?.id === suppressClick.inputId && button.dataset.testid === suppressClick.direction) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            suppressClick = null;
+        }
+    }, true);
+    const release = event => {
+        if (active?.pointerId === event.pointerId) stop();
+    };
+    document.addEventListener('pointerup', release, true);
+    document.addEventListener('pointercancel', release, true);
+    document.addEventListener('pointermove', event => {
+        if (!active || active.pointerId !== event.pointerId) return;
+        const bounds = currentButton()?.getBoundingClientRect();
+        if (!bounds || event.clientX < bounds.left || event.clientX > bounds.right ||
+            event.clientY < bounds.top || event.clientY > bounds.bottom) stop();
+    }, true);
+    document.addEventListener('visibilitychange', stop, true);
+    window.addEventListener('blur', stop, true);
+})();
+</script>
